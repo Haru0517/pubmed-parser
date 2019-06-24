@@ -107,3 +107,4 @@ venv.bak/
 # custom
 source/dataset/
 Pipfile.lock
+db/
