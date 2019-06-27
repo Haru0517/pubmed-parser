@@ -4,7 +4,6 @@ import gzip
 from pprint import pprint
 
 
-
 def fast_iter(context, func):
     for event, elem in context:
         func(elem)
@@ -50,7 +49,8 @@ def get_authors_info(elem):
         dic = {
             'lastname': get_elem_text(author_elem, 'LastName'),
             'forename': get_elem_text(author_elem, 'ForeName'),
-            'initials': get_elem_text(author_elem, 'Initials')
+            'initials': get_elem_text(author_elem, 'Initials'),
+            'affiliation': get_elem_text(author_elem, 'AffiliationInfo/Affiliation')
         }
         ret_authors_info.append(dic)
     return ret_authors_info
@@ -85,36 +85,60 @@ def get_reference_info(elem):
     return ret_refer_info
 
 
+def get_comments_corrections_info(elem):
+    cc_path = 'MedlineCitation/CommentsCorrectionsList/CommentsCorrections'
+    cc_elem_list = elem.findall(cc_path)
+
+    ret_cc_info = []
+    for cc_elem in cc_elem_list:
+        dic = {
+            'ref_source': get_elem_text(cc_elem, 'RefSource'),
+            'pmid': get_elem_text(cc_elem, 'PMID'),
+        }
+        ret_cc_info.append(dic)
+    return ret_cc_info
+
+
 def parse_entity(elem):
     article_path = 'MedlineCitation/Article/'
 
     parsed_dic = {
-        # これでOK
         'pmid': get_elem_text(elem, 'MedlineCitation/PMID'),
+        'date_completed': get_elem_text(elem, 'MedlineCitation/DateCompleted/Year'),
+        'date_revised': get_elem_text(elem, 'MedlineCitation/DateRevised/Year'),
         'title': get_elem_text(elem, article_path+'ArticleTitle'),
-        'authors': get_authors_info(elem),  # {LastName, ForeName, Initials, affiliation}
+        'authors': get_authors_info(elem),
         'pubdate': get_elem_text(elem, article_path+'Journal/JournalIssue/PubDate/Year'),
         'journal': get_elem_text(elem, article_path+'Journal/Title'),
-        'abstract': get_elem_text(elem, article_path+'Abstract/AbstractText'),
-        'publication_types': get_elem_dic(elem, 'MedlineCitation/Article/PublicationTypeList/PublicationType', 'UI'),  # 例：{D016428:Journal Art, D013487:Research Sup}
-        'lang': get_elem_text(elem, article_path+'Language'),  # str
-        'country': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/Country'),  # str
-        'medline_ta': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/MedlineTA'),  # str
-        'nlm_unique_id': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/NlmUniqueID'),  # str
-        'issn_linking': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/ISSNLinking'),  # str
-        'other_id': get_elem_dic(elem, 'MedlineCitation/OtherID', 'Source'),  # {'nasa', 'pop'} otheridをfindallする
-        'keywords': get_elem_list(elem, 'MedlineCitation/KeywordList/Keyword'),  # list YNはいらん?
-        'mesh_terms': get_elem_dic(elem, 'MedlineCitation/MeshHeadingList/MeshHeading/DescriptorName', 'UI'),  # {D000818:Animals; D001665:Binding Sites} qualifierもまとめて
-        'chemical_list': get_elem_dic(elem, 'MedlineCitation/ChemicalList/Chemical/NameOfSubstance', 'UI'),  # {D002104:Cadmium; D002256:Carbonic}
-        'grants': get_grant_info(elem),  # [{id, agency, country}, {}]
-        'article_ids': get_elem_dic(elem, 'PubmedData/ArticleIdList/ArticleId', 'IdType'),  # articleIdList {'pubmed', 'pmc'}
-        'references': get_reference_info(elem), # ReferenceList [{'citation': str, 'ids': {'pubmed', 'pmc'}}, {}]
-        'delete': False,  # bool
+        'volume': get_elem_text(elem, article_path + 'Journal/JournalIssue/Volume'),
+        'issue': get_elem_text(elem, article_path + 'Journal/JournalIssue/Issue'),
+        'page': get_elem_text(elem, article_path + 'Pagination/MedlinePgn'),
+        'issn': get_elem_text(elem, article_path + 'Journal/ISSN'),
+        'issn_linking': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/ISSNLinking'),
+        'iso_abbreviation': get_elem_text(elem, article_path + 'Journal/ISOAbbreviation'),
+        'medline_ta': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/MedlineTA'),
+        'abstract': get_elem_list(elem, article_path+'Abstract/AbstractText'),
+        'other_abstract': get_elem_list(elem, 'MedlineCitation/OtherAbstract/AbstractText'),
+        'lang': get_elem_text(elem, article_path+'Language'),
+        'country': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/Country'),
+        'nlm_unique_id': get_elem_text(elem, 'MedlineCitation/MedlineJournalInfo/NlmUniqueID'),
+        'other_id': get_elem_dic(elem, 'MedlineCitation/OtherID', 'Source'),
+        'publication_types': get_elem_dic(elem, 'MedlineCitation/Article/'
+                                                'PublicationTypeList/PublicationType', 'UI'),
+        'keywords': get_elem_list(elem, 'MedlineCitation/KeywordList/Keyword'),
+        'mesh_terms': get_elem_dic(elem, 'MedlineCitation/MeshHeadingList/'
+                                         'MeshHeading/DescriptorName', 'UI'),
+        'chemical_list': get_elem_dic(elem, 'MedlineCitation/ChemicalList/'
+                                            'Chemical/NameOfSubstance', 'UI'),
+        'grants': get_grant_info(elem),
+        'article_ids': get_elem_dic(elem, 'PubmedData/ArticleIdList/ArticleId', 'IdType'),
+        'references': get_reference_info(elem),
+        'number_of_reference': get_elem_text(elem, 'MedlineCitation/NumberOfReferences'),
+        'citation_subset': get_elem_text(elem, 'MedlineCitation/CitationSubset'),
+        'comments_corrections': get_comments_corrections_info(elem),
+        'publication_status': get_elem_text(elem, 'PubmedData/PublicationStatus'),
     }
-    """
-    other abstract
-    全部抽出しよう！
-    """
+
     #pprint(parsed_dic)
     write_to_json('test.json', parsed_dic)
 
