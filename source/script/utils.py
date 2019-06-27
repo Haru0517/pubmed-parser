@@ -8,6 +8,15 @@ import codecs
 import ujson
 
 
+def fast_iter(context, func):
+    for event, elem in context:
+        func(elem)
+        elem.clear()
+        while elem.getprevious() is not None:
+            del elem.getparent()[0]
+    del context
+
+
 def write_to_json(filename, data):
     """データをインデントありのjson形式で保存
 
