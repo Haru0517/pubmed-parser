@@ -1,11 +1,25 @@
-from script.utils import fast_iter, write_to_json, pretty_print
+from script.utils import write_to_json, pretty_print, stringify_children
 from lxml import etree
 import gzip
 from pprint import pprint
+from pymongo import MongoClient
+from glob import glob
+from tqdm import tqdm
+from functools import partial
+
+
+__all__ = [
+    'parse_all'
+]
+
+# MongoDBのコレクションを取得
+client = MongoClient('mongodb://mongo:27017', username='root', password='example')
+db = client.pubmed_database
+collection = db.pubmed_article
 
 
 def fast_iter(context, func):
-    for event, elem in context:
+    for _, elem in context:
         func(elem)
         elem.clear()
         while elem.getprevious() is not None:
@@ -13,12 +27,20 @@ def fast_iter(context, func):
     del context
 
 
-def get_elem_text(par_elem, elem_name: str):
-    if par_elem.find(elem_name) is not None:
-        elem_text = (par_elem.find(elem_name).text or '').strip() or ''
+def get_elem_text(par_elem, elem_path: str):
+    if par_elem.find(elem_path) is not None:
+        elem_text = ''.join(par_elem.find(elem_path).itertext()).strip()
     else:
         elem_text = ''
     return elem_text
+
+
+def  get_elem_attrib(par_elem,  elem_path: str, attrib: str):
+    if par_elem.find(elem_path) is not None:
+        elem_attrib = par_elem.find(elem_path).attrib.get(attrib, '')
+    else:
+        elem_attrib = ''
+    return elem_attrib
 
 
 def get_elem_dic(elem, elem_path: str, attrib: str):
@@ -27,7 +49,7 @@ def get_elem_dic(elem, elem_path: str, attrib: str):
     _ret_dic = {}
     for _elem in _elem_list:
         _key = _elem.attrib.get(attrib, '')
-        _text = _elem.text.strip() or ''
+        _text = ''.join(_elem.itertext()).strip()
         _ret_dic[_key] = _text
 
     return _ret_dic
@@ -35,9 +57,8 @@ def get_elem_dic(elem, elem_path: str, attrib: str):
 
 def get_elem_list(elem, elem_path: str):
     _elem_list = elem.findall(elem_path)
-    _ret_list = [_elem.text.strip() or '' for _elem in _elem_list]
+    _ret_list = [''.join(_elem.itertext()).strip() for _elem in _elem_list]
     return _ret_list
-
 
 
 def get_authors_info(elem):
@@ -50,6 +71,7 @@ def get_authors_info(elem):
             'lastname': get_elem_text(author_elem, 'LastName'),
             'forename': get_elem_text(author_elem, 'ForeName'),
             'initials': get_elem_text(author_elem, 'Initials'),
+            'collective':  get_elem_text(author_elem, 'CollectiveName'),
             'affiliation': get_elem_text(author_elem, 'AffiliationInfo/Affiliation')
         }
         ret_authors_info.append(dic)
@@ -99,11 +121,20 @@ def get_comments_corrections_info(elem):
     return ret_cc_info
 
 
-def parse_entity(elem):
+def parse_entity(elem, base_xml):
     article_path = 'MedlineCitation/Article/'
 
+    pmid = get_elem_text(elem, 'MedlineCitation/PMID')
+    version = int(get_elem_attrib(elem, 'MedlineCitation/PMID', 'Version'))
+
+    if collection.find_one({'_id': pmid,  'version': {'$gte': version}}):
+        # これより新しいVersionのArticleが既に存在するので，飛ばす
+        return
+
     parsed_dic = {
-        'pmid': get_elem_text(elem, 'MedlineCitation/PMID'),
+        '_id': pmid,
+        'version':  version,
+        'base_xml': base_xml,
         'date_completed': get_elem_text(elem, 'MedlineCitation/DateCompleted/Year'),
         'date_revised': get_elem_text(elem, 'MedlineCitation/DateRevised/Year'),
         'title': get_elem_text(elem, article_path+'ArticleTitle'),
@@ -139,30 +170,46 @@ def parse_entity(elem):
         'publication_status': get_elem_text(elem, 'PubmedData/PublicationStatus'),
     }
 
-    #pprint(parsed_dic)
-    write_to_json('test.json', parsed_dic)
+    # MongoDBに格納，versionが上なら上書き（古いVersionのやつは上で既に飛ばしてる）
+    collection.replace_one({'_id': pmid}, parsed_dic, upsert=True)
 
 
 def parse_all():
+    xml_dir = 'dataset/baseline/*.xml.gz'
+
     # globで全xml.gzをiterで読み込み forループ
-    path = 'dataset/sample/sample.xml'
+    for xml_path in tqdm(glob(xml_dir), desc='Baseline'):
 
-    # path設定
-    if '.gz' in path:
-        path = gzip.GzipFile(path)
+        # 一つのファイルをiterparse
+        tree = etree.iterparse(gzip.GzipFile(xml_path), events=('end',), tag='PubmedArticle')
 
-    # 一つのファイルをiterparse
-    tree = etree.iterparse(path, events=('start',), tag='PubmedArticle')
+        # elemに分解して，parse_entityに渡す
+        fast_iter(tree, partial(parse_entity, base_xml=xml_path))
+    exit()
 
-    # elemに分解して，parse_entityに渡す
-    fast_iter(tree, parse_entity)
+    # updatesにも同じ処理
+    xml_dir = 'dataset/updates/*.xml.gz'
+    for xml_path in tqdm(glob(xml_dir), desc='Updates'):
+        tree = etree.iterparse(gzip.GzipFile(xml_path), events=('end',), tag='PubmedArticle')
+        fast_iter(tree, partial(parse_entity, base_xml=xml_path))
+
+
+def test():
+    node = etree.fromstring("""
+    <content>
+        Text outside tag <div>Text <em>inside</em> tag</div>
+    </content>
+    """)
+
+    print(''.join(node.itertext()))
 
 
 if __name__ == '__main__':
     parse_all()
+    # find_article_in_xml()
 
 
 """
-python -m script.test
+python -m script.pubmed_iter_parser
 で実行可能
 """
