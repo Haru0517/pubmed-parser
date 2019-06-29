@@ -1,16 +1,11 @@
-from script.utils import write_to_json, pretty_print, stringify_children
-from lxml import etree
 import gzip
-from pprint import pprint
-from pymongo import MongoClient
 from glob import glob
+
+from lxml import etree
+from pymongo import MongoClient
 from tqdm import tqdm
 from functools import partial
 
-
-__all__ = [
-    'parse_all'
-]
 
 # MongoDBのコレクションを取得
 client = MongoClient('mongodb://mongo:27017', username='root', password='example')
