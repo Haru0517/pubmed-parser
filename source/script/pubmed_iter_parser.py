@@ -5,6 +5,8 @@ from lxml import etree
 from pymongo import MongoClient
 from tqdm import tqdm
 from functools import partial
+from script.utils import make_logger
+import traceback
 
 
 # MongoDBのコレクションを取得
@@ -170,23 +172,59 @@ def parse_entity(elem, base_xml):
 
 
 def parse_all():
-    xml_dir = 'dataset/baseline/*.xml.gz'
+    # ログを読み込み
+    with open('log/parsed_files.log', mode='r') as f:
+        parsed_file_list = f.readlines()
+    parsed_file_list = [f.rstrip('\n') for f in parsed_file_list]
 
-    # globで全xml.gzをiterで読み込み forループ
-    for xml_path in tqdm(glob(xml_dir), desc='Baseline'):
+    # loggerを作成
+    progress_logger = make_logger(log_name='parser-log', filename='log/parser.log', mode='a')
+    parsed_file_logger = make_logger(log_name='parsed-file-log', filename='log/parsed_files.log',
+                                     mode='a', formatter='%(message)s')
 
-        # 一つのファイルをiterparse
-        tree = etree.iterparse(gzip.GzipFile(xml_path), events=('end',), tag='PubmedArticle')
+    xml_dirs = ['dataset/baseline/*.xml.gz', 'dataset/updates/*.xml.gz']
+    descs = ['Baseline', 'Updates']
+    for i, xml_dir in enumerate(xml_dirs):
+        for xml_path in tqdm(glob(xml_dir), desc=descs[i]):
+            if xml_path in parsed_file_list:
+                # 既にパースしたファイルは飛ばす
+                continue
+            try:
+                tree = etree.iterparse(gzip.GzipFile(xml_path),
+                                       events=('end',), tag='PubmedArticle')
+                fast_iter(tree, partial(parse_entity, base_xml=xml_path))
+                parsed_file_logger.debug(xml_path)
+                progress_logger.debug(f'Complete: {xml_path}')
+            except EOFError:
+                progress_logger.warning(f'Broken file: {xml_path}')
 
-        # elemに分解して，parse_entityに渡す
-        fast_iter(tree, partial(parse_entity, base_xml=xml_path))
-    exit()
 
-    # updatesにも同じ処理
-    xml_dir = 'dataset/updates/*.xml.gz'
-    for xml_path in tqdm(glob(xml_dir), desc='Updates'):
-        tree = etree.iterparse(gzip.GzipFile(xml_path), events=('end',), tag='PubmedArticle')
-        fast_iter(tree, partial(parse_entity, base_xml=xml_path))
+def parse_select():
+    # ログを読み込み
+    with open('log/parsed_files.log', mode='r') as f:
+        parsed_file_list = f.readlines()
+    parsed_file_list = [f.rstrip('\n') for f in parsed_file_list]
+
+    # loggerを作成
+    progress_logger = make_logger(log_name='parser-log', filename='log/parser.log', mode='a')
+    parsed_file_logger = make_logger(log_name='parsed-file-log', filename='log/parsed_files.log',
+                                     mode='a', formatter='%(message)s')
+
+    xml_files = ['dataset/baseline/pubmed19n0490.xml.gz', 'dataset/baseline/pubmed19n0482.xml.gz',
+                 'dataset/baseline/pubmed19n0370.xml.gz', 'dataset/updates/pubmed19n0974.xml.gz']
+    for xml_path in tqdm(xml_files):
+        if xml_path in parsed_file_list:
+            # 既にパースしたファイルは飛ばす
+            continue
+        try:
+            tree = etree.iterparse(gzip.GzipFile(xml_path),
+                                   events=('end',), tag='PubmedArticle')
+            fast_iter(tree, partial(parse_entity, base_xml=xml_path))
+            parsed_file_logger.debug(xml_path)
+            progress_logger.debug(f'Complete: {xml_path}')
+        except EOFError:
+            progress_logger.warning(f'Broken file: {xml_path}')
+
 
 
 def test():
@@ -197,11 +235,15 @@ def test():
     """)
 
     print(''.join(node.itertext()))
+    logger = make_logger('test', 'test.log', 'w')
+    logger.debug(''.join(node.itertext()).strip())
+    logger.debug('aaaa')
 
 
 if __name__ == '__main__':
-    parse_all()
-    # find_article_in_xml()
+    # parse_all()
+    parse_select()
+    # test()
 
 
 """

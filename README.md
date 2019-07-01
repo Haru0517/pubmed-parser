@@ -14,6 +14,8 @@ dataset下にbaselineとupdatesをそれぞれダウンロードします．
 
 #### 2. Exec pubmed_iter_parser.py
 `python -m script.pubmed_iter_parser`で実行できます．
+` nohup python -m script.pubmed_iter_parser > log/nohup.out &
+`でバックグラウンドで実行します．
 
 MongoDB内に逐次保存していきます．
 途中で中断してもOKです．同じかつ古いバージョンのレコードは保存しません．
